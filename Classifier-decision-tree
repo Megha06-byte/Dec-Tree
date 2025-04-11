@@ -1,0 +1,303 @@
+import numpy as np  
+import pandas as pd  
+from sklearn.model_selection import train_test_split  
+from sklearn.preprocessing import LabelEncoder  
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.metrics import accuracy_score, mean_squared_error
+import matplotlib.pyplot as plt
+
+class Node:  
+    def __init__(self, feature_index=None, threshold=None, left=None, right=None, value=None, gini=None):  
+        self.feature_index = feature_index  #feature used for splitting at a node
+        self.threshold = threshold  #value of that feature used for splitiing
+        self.left = left  #leftSubtree
+        self.right = right  #RightSubtree
+        self.gini = gini  #gini index
+        self.value = value  #number of unique values of target parameter
+
+class DecisionTreeClassifier_coded:  
+    def __init__(self, max_depth=None):  
+        self.root = None  #root Node
+        self.max_depth = max_depth  #stopping condition
+
+    def build_tree(self, X, y, depth=0):  
+        n_samples = X.shape[0]  #No of rows
+        n_features = X.shape[1]  #No of columns
+       # stopping condition if number of unique values of target variable is 1 or max depth is reached
+        if len(np.unique(y)) == 1 or (self.max_depth is not None and depth >= self.max_depth):  
+            leaf_value = np.bincount(y).argmax()  
+            return Node(value=leaf_value)  
+
+        best_split = self._best_split(X, y, n_features)  
+        if best_split is None:  
+            leaf_value = np.bincount(y).argmax()  
+            return Node(value=leaf_value) #it's a leaf node, return
+
+        left_indices, right_indices = best_split['left_indices'], best_split['right_indices']  
+        left_subtree = self.build_tree(X[left_indices], y[left_indices], depth + 1)  #recursive call for left tree
+        right_subtree = self.build_tree(X[right_indices], y[right_indices], depth + 1)  #recursive call for right tree
+
+        return Node(feature_index=best_split['feature_index'],  
+                    threshold=best_split['threshold'],  
+                    left=left_subtree,  
+                    right=right_subtree,  
+                    gini=best_split['gini'])  
+   #calculating best split using gini impurity
+    def _best_split(self, X, y, n_features):  
+        best_gini = float('inf')  
+        best_split = None  
+        for feature_index in range(n_features):  
+            thresholds = np.unique(X[:, feature_index])  
+            for threshold in thresholds:  
+                left_indices = np.where(X[:, feature_index] < threshold)[0]  
+                right_indices = np.where(X[:, feature_index] >= threshold)[0]  
+
+                if len(left_indices) == 0 or len(right_indices) == 0:  
+                    continue  
+
+                gini = self._gini_index(y[left_indices], y[right_indices])  
+                if gini < best_gini:  
+                    best_gini = gini  
+                    best_split = {  
+                        'feature_index': feature_index,  
+                        'threshold': threshold,  
+                        'gini': gini,  
+                        'left_indices': left_indices,  
+                        'right_indices': right_indices  
+                    }  
+        return best_split  
+
+    def _gini_index(self, left_y, right_y):  
+        total_samples = len(left_y) + len(right_y)  
+
+        if total_samples == 0:  
+            return 0  
+       #function to actually calculate the gini index for a split
+        def gini(y):  
+            if len(y) == 0:  
+                return 0  
+            class_probabilities = np.bincount(y) / len(y)  
+            return 1 - np.sum(class_probabilities ** 2)  
+
+        gini_left = gini(left_y)  
+        gini_right = gini(right_y)  
+
+        return (len(left_y) / total_samples) * gini_left + (len(right_y) / total_samples) * gini_right  
+ #fitting the model
+    def fit(self, X, y):  
+        self.root = self.build_tree(X, y)  
+#ppredicting the output for a single value
+    def predict_one(self, x, node):  
+        if node.value is not None:  
+            return node.value  
+        if x[node.feature_index] < node.threshold:  
+            return self.predict_one(x, node.left)  
+        else:  
+            return self.predict_one(x, node.right)  
+#predicitng for array of values.
+    def predict(self, X):  
+        return np.array([self.predict_one(x, self.root) for x in X])  
+
+if __name__ == "__main__":  
+    data = pd.read_csv("Breast_Cancer(1).csv")  
+    col_names = ['Age', 'Tumor Size', 'Regional Node Examined', 'Reginol Node Positive', 'Status']  
+    
+    # Prepare feature matrix and target vector  
+    X = data[col_names].values  
+    y = data['Status'].values  
+
+    # Convert the target variable to numeric encoding if not already  
+    if np.issubdtype(y.dtype, np.object_):  # Check if dtype is object (usually string)  
+        le = LabelEncoder()  
+        y = le.fit_transform(y)  # Encoding categorical labels into integers  
+
+    # Splitting the dataset into training and test sets  
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)  
+
+    # Initialize and fit the decision tree classifier  
+    classifier = DecisionTreeClassifier_coded(max_depth=3)  
+    classifier.fit(X_train, y_train)  
+
+    # Predict on the test set  
+    predictions = classifier.predict(X_test)  
+
+    # Calculate accuracy  
+    accuracy = np.sum(predictions == y_test) / len(y_test)  
+    print(f"Accuracy on test set: {accuracy:.2f}")
+
+    #predict on training set
+    predictions1 = classifier.predict(X_train)
+    accuracy1 = np.sum(predictions1 == y_train)/len(y_train)
+    print(f"Accuracy on train set: {accuracy1:2f}")
+
+
+# If `new_values` is a new data entry, predict the status for new feature values  
+    #prediction = classifier.predict(new_values)  
+
+    # Map the predictions to "alive" or "dead"  
+   # status_mapping = {0: "alive", 1: "dead"}   
+
+    # Iterate through the predictions and print the corresponding status  
+    #for p in prediction:  
+       # print(f"Predicted status: {status_mapping[p]}") '''
+
+
+data = pd.read_csv("Breast_Cancer(1).csv")
+df = pd.DataFrame(data)  
+
+# Convert 'Status' to binary  
+df['Status'] = df['Status'].map({'Alive': 0, 'Dead': 1})  
+
+# Features and target  
+X = df[['Tumor Size', 'Age', 'Regional Node Examined', 'Reginol Node Positive']]  
+y = df['Status']  
+
+# Split the data into training and testing sets  
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)  
+
+# Create the decision tree classifier  
+classifier = DecisionTreeClassifier(criterion='entropy', random_state=42)  
+
+# Fit the model  
+classifier.fit(X_train, y_train)  
+
+# Predicting outcomes for test data  
+y_pred = classifier.predict(X_test)  
+
+
+
+# Evaluate the classifier  
+accuracy = classifier.score(X_test, y_test)  
+print(f'Accuracy of the decision tree: {accuracy:.2f}')
+
+#Random Forest Implementation using RandomForestClassifier from sklearn.ensemble
+# Create the Random Forest classifier  
+classifier = RandomForestClassifier(n_estimators=100, random_state=42)  
+
+# Fitting the model  
+classifier.fit(X_train, y_train)  
+
+# Predicting outcomes for test data  
+y_pred = classifier.predict(X_test)  
+
+# Evaluating the classifier  
+accuracy = classifier.score(X_test, y_test)  
+print(f'Accuracy of the Random Forest classifier: {accuracy:.2f}')
+
+# Parameters  
+num_epochs = 20  # Total number of epochs  
+
+# To store accuracy and loss after each epoch  
+epoch_accuracies = []  
+epoch_losses = []  
+
+# Simulate training over epochs  
+for epoch in range(1, num_epochs + 1):  
+    print(f"Epoch {epoch}/{num_epochs}")  
+    
+    # Calculate number of batches for the current epoch  
+    num_batches = len(X_train) // epoch  # Number of batches based on the epoch number  
+    
+    # Shuffle the training data indices  
+    indices = np.arange(len(X_train))  
+    np.random.shuffle(indices)  
+    
+    # Create batches and train the model  
+    for batch in range(num_batches):  
+        start_index = batch * (len(X_train) // num_batches)  
+        end_index = start_index + (len(X_train) // num_batches) if batch < num_batches - 1 else len(X_train)  
+        
+        # Create batch  
+        X_batch = X_train.iloc[indices[start_index:end_index]]  # Use iloc for DataFrame indexing  
+        y_batch = y_train.iloc[indices[start_index:end_index]]  # Use iloc for Series indexing  
+        
+        # Train the decision tree on the current batch using Gini impurity  
+        tree = DecisionTreeClassifier(criterion='gini', random_state=42)  # Set criterion to 'gini'  
+        tree.fit(X_batch, y_batch)  
+
+# After training on all batches, evaluate the model on the test set  
+    y_val_pred = tree.predict(X_test)  
+    accuracy = accuracy_score(y_test, y_val_pred)  
+    loss = mean_squared_error(y_test, y_val_pred)  
+    
+    epoch_accuracies.append(accuracy)  
+    epoch_losses.append(loss)  
+    print(f"Validation Accuracy after epoch {epoch}: {accuracy:.4f}, Validation Loss: {loss:.4f}")  
+
+# Plot the accuracy over epochs  
+plt.figure(figsize=(12, 5))  
+
+plt.subplot(1, 2, 1)  
+plt.plot(range(1, num_epochs + 1), epoch_accuracies, marker='o')  
+plt.title('Validation Accuracy over Epochs')  
+plt.xlabel('Epoch')  
+plt.ylabel('Validation Accuracy')  
+plt.grid()  
+
+# Plot the validation loss over epochs  
+plt.subplot(1, 2, 2)  
+plt.plot(range(1, num_epochs + 1), epoch_losses, marker='o', color='red')  
+plt.title('Validation Loss over Epochs')  
+plt.xlabel('Epoch')  
+plt.ylabel('Validation Loss (MSE)')  
+plt.grid()  
+
+plt.tight_layout()  
+plt.show()
+
+
+'''# Initialize the Random Forest classifier outside of the loop  
+classifier = RandomForestClassifier(n_estimators=100, random_state=42)  
+
+# Simulate training over epochs  
+for epoch in range(1, num_epochs + 1):  
+    print(f"Epoch {epoch}/{num_epochs}")  
+    
+    # Calculate number of batches for the current epoch  
+    num_batches = epoch  # Number of batches based on the epoch number  
+    
+    # Shuffle the training data indices  
+    indices = np.arange(len(X_train))  
+    np.random.shuffle(indices)  
+    
+    # Create batches and train the model  
+    for batch in range(num_batches):  
+        batch_size = len(X_train) // num_batches  # Calculate the batch size  
+        start_index = batch * batch_size  
+        end_index = start_index + batch_size if batch < num_batches - 1 else len(X_train)  
+        
+        # Create batch  
+        X_batch = X_train.iloc[indices[start_index:end_index]]  # Use iloc for DataFrame indexing  
+        y_batch = y_train.iloc[indices[start_index:end_index]]  # Use iloc for Series indexing  
+        
+
+  # Fitting the model on the current batch  
+        classifier.fit(X_batch, y_batch)   
+
+    # After training on all batches, evaluate the model on the test set  
+    y_val_pred = classifier.predict(X_test)  # Use the trained classifier  
+    accuracy = accuracy_score(y_test, y_val_pred)  
+    loss = mean_squared_error(y_test, y_val_pred)  
+    
+    epoch_accuracies.append(accuracy)  
+    epoch_losses.append(loss)  
+    print(f"Validation Accuracy after epoch {epoch}: {accuracy:.4f}, Validation Loss: {loss:.4f}")  
+
+# Plot the accuracy over epochs  
+plt.figure(figsize=(12, 5))  
+
+plt.subplot(1, 2, 1)  
+plt.plot(range(1, num_epochs + 1), epoch_accuracies, marker='o')  
+plt.title('Validation Accuracy over Epochs')  
+plt.xlabel('Epoch')  
+plt.ylabel('Validation Accuracy')  
+plt.grid()  
+# Plot the validation loss over epochs  
+plt.subplot(1, 2, 2)  
+plt.plot(range(1, num_epochs + 1), epoch_losses, marker='o', color='red')  
+plt.title('Validation Loss over Epochs')  
+plt.xlabel('Epoch')  
+plt.ylabel('Validation Loss (MSE)')  
+plt.grid()  '''
+#commenting the validation acuracy and loss plot from random forest model as causing resolution error with same graphs of decision tree model
